@@ -10,3 +10,8 @@ void writehdf5(const int num_varnames, char **varnames, MPI_Comm comm, int rank,
                int ni, int nj, int nk, int cni, int cnj, int cnk, 
                float deltax, float deltay, float deltaz, 
                float *data, float *height, int *ola_mask, int *ol_mask, hsize_t *h5_chunk, int hdf5_compress);
+void writehdf5_quilt(const int num_varnames, char varnames[][20], MPI_Comm comm, int tstep,
+               int ni, int nj, int nk, int cni, int cnj, int cnk,
+               float *data, float *height, int *ola_mask, int *ol_mask, hsize_t *h5_chunk, int hdf5_compress,int i);
+
+void test(float *, ...);
