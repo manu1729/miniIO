@@ -215,6 +215,7 @@ int main(int argc, char **argv)
      int old_rank = rank;
      MPI_Comm_rank(comm, &rank);
      MPI_Cart_coords(comm, rank, 3, crnk);
+     printf("(old rank, new rank) = (%d, %d), cart = (%d, %d, %d)\n", old_rank, rank, crnk[0],crnk[1],crnk[2]);
     }
     if (color == 0)
       MPI_Intercomm_create(comm, 0, MPI_COMM_WORLD, inp*jnp*knp, 1, &inter_comm);
@@ -468,16 +469,8 @@ int main(int argc, char **argv)
 
         }
 
-        if (rank >= inp*jnp*knp) {;
-          int i; int *ola, *ol; float *d, *h;
-          for (i = 0; i < inp*jnp*knp; i++) {
-            ola = (allola_mask) + i*(cni*cnj*cnk+3); 
-            ol = (allol_mask) + i*(cni*cnj*cnk);
-	    d = (alldata) + i*(cni*cnj*cnk);
-	    h = (allheight) + i*(cni*cnj*cnk);
-            writehdf5_quilt(num_varnames, varnames, new_comm, tt, ni, nj, nk, cni, cnj, cnk, d, h, ola, ol, hdf5_chunk, hdf5_compress,i);
-        
-	  }
+        if (rank >= inp*jnp*knp) {
+            writehdf5_quilt_new(num_varnames, varnames, new_comm, tt, ni, nj, nk, cni, cnj, cnk, alldata, allheight, allola_mask, allol_mask, hdf5_chunk, hdf5_compress,rank);
 	}   // end of "if (rank < inp*jnp*knp)"
 
       }

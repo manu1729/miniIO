@@ -3,20 +3,9 @@
 LIBS =
 
 HOSTNAME := $(shell hostname)
-ifeq ($(findstring .mil,$(HOSTNAME)),.mil)
-  ifeq ($(findstring topaz,$(HOSTNAME)),topaz)
-   CC = icc
-   FC = ifort
-   LIBS = -lmpi
-  else
-   CC = cc
-   FC = ftn
-  endif
-else
-  CC ?= mpicc
-  CXX ?= mpicxx
-  FC ?= mpif90
-endif
+CC = mpicc
+CXX = mpicxx
+FC = mpif90
 
 # Optimization and debugging flags, (un)comment as desired
 OPT = -O3
