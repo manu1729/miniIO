@@ -52,16 +52,16 @@ int main(int argc, char **argv)
   float deltax, deltay, deltaz; 
   int numPoints;
   float *data;
-  float *alldata; /* Added for quilting - Manu */
+  float *rowdata; /* Added for quilting - Manu */
   float *height;
-  float *allheight; /* Added for quilting - Manu */
+  float *rowheight; /* Added for quilting - Manu */
   int height_index;
   int hindex;
   int maskTindex;
   int *ola_mask;
   int *ol_mask;
-  int *allola_mask; /* Added for quilting - Manu */
-  int *allol_mask; /* Added for quilting - Manu */
+  int *rowola_mask; /* Added for quilting - Manu */
+  int *rowol_mask; /* Added for quilting - Manu */
   float mask_thres=0.0;     /* upper mask threshold  (range -1 to 1) */
   float bot_mask_thres=0.5; /* bottom mask threshold (range 0.0 to (mask_thres+1)/2 ) */
   int mask_thres_index;
@@ -73,7 +73,7 @@ int main(int argc, char **argv)
 
   /* MPI vars */
   MPI_Comm comm = MPI_COMM_WORLD;
-  int cprocs[3], cpers[3], crnk[3];  /* MPI Cartesian info */
+  int cprocs[3], cpers[3], crnk[3] = {-1,-1,-1};  /* MPI Cartesian info */
   int rank, nprocs;
   int cni, cnj, cnk;   /* Points in this task */
   int is, js, ks;     /* Global index starting points */
@@ -82,7 +82,8 @@ int main(int argc, char **argv)
   /* MPI vars for IO quilting: Manu */
   int new_rank;
   MPI_Comm  new_comm;
-  MPI_Comm inter_comm;
+  MPI_Comm inter_comm, row_comm;
+  MPI_Comm inter_comm_rows[20];
   int color;
  
   /* ADIOS vars */
@@ -186,6 +187,11 @@ int main(int argc, char **argv)
     print_usage(rank, "Error: number of required tasks does not equal total MPI tasks");
     MPI_Abort(MPI_COMM_WORLD, 1);
   }
+  if(inp != iots) {   /* For quilting: Manu */
+    print_usage(rank, "Error: number of I/O tasks should be equal to the number of compute tasks along i-drection");
+    MPI_Abort(MPI_COMM_WORLD, 1);
+  }
+
   if(ni % inp || nj % jnp || nk % knp) {
     print_usage(rank, "Error: number of points on an axis is not evenly divisible "
                 "by axis tasks.\n   This is required for proper load balancing.");
@@ -211,18 +217,36 @@ int main(int argc, char **argv)
     if (rank < inp*jnp*knp) {
      cprocs[0] = inp;  cprocs[1] = jnp;  cprocs[2] = knp;
      cpers[0] = 0;  cpers[1] = 0;  cpers[2] = 0;    /* No periodicity */
-     MPI_Cart_create(new_comm, 3, cprocs, cpers, 1, &comm);
+     MPI_Cart_create(new_comm, 3, cprocs, cpers, 0, &comm);
      int old_rank = rank;
      MPI_Comm_rank(comm, &rank);
      MPI_Cart_coords(comm, rank, 3, crnk);
+     color = crnk[0];
+     MPI_Comm_split(new_comm, color, rank, &row_comm);
      printf("(old rank, new rank) = (%d, %d), cart = (%d, %d, %d)\n", old_rank, rank, crnk[0],crnk[1],crnk[2]);
     }
+
+    if (crnk[0] != -1) {
+//      printf("++++rank %d\n", rank);
+      MPI_Intercomm_create(row_comm, 0, MPI_COMM_WORLD, inp*jnp*knp+crnk[0], crnk[0], &inter_comm_rows[crnk[0]]);
+    } else if (crnk[0] == -1) {
+      int nr;
+      MPI_Comm_rank(new_comm, &nr);
+//      printf("----rank %d %d\n", rank, nr);
+      MPI_Intercomm_create(new_comm, nr, MPI_COMM_WORLD, nr*jnp*knp, nr, &inter_comm_rows[nr]);
+    }
+//    printf("-------------done---------\n");
+  }
+  
+
+/*
     if (color == 0)
       MPI_Intercomm_create(comm, 0, MPI_COMM_WORLD, inp*jnp*knp, 1, &inter_comm);
     else {
       MPI_Intercomm_create(new_comm, 0, MPI_COMM_WORLD, 0, 1, &inter_comm);
     }
   }
+*/
 
     deltax = 1.f/(ni-1);
     deltay = 1.f/(nj-1);
@@ -263,10 +287,16 @@ int main(int argc, char **argv)
     ol_mask = (int *) malloc((size_t)cni*cnj*cnk*sizeof(int));
     ola_mask[cni*cnj*cnk] = crnk[0]; ola_mask[cni*cnj*cnk+1] = crnk[1];ola_mask[cni*cnj*cnk+2] = crnk[2];
    } else {
+/*
     alldata = (float *) malloc((size_t)cni*cnj*cnk*sizeof(float)*inp*jnp*knp);
     allheight = (float *) malloc((size_t)cni*cnj*cnk*sizeof(float)*inp*jnp*knp);
     allola_mask = (int *) malloc((size_t)(cni*cnj*cnk+3)*sizeof(int)*inp*jnp*knp);
     allol_mask = (int *) malloc((size_t)cni*cnj*cnk*sizeof(int)*inp*jnp*knp);
+*/
+    rowdata = (float *) malloc((size_t)cni*cnj*cnk*sizeof(float)*inp);
+    rowheight = (float *) malloc((size_t)cni*cnj*cnk*sizeof(float)*inp);
+    rowola_mask = (int *) malloc((size_t)(cni*cnj*cnk+3)*sizeof(int)*inp);
+    rowol_mask = (int *) malloc((size_t)cni*cnj*cnk*sizeof(int)*inp);
    }
 
 /*    varnames[0] = "data";
@@ -427,12 +457,54 @@ int main(int argc, char **argv)
   #endif
    
   #ifdef HAS_HDF5
+      if (rank < 2) {
+       int i;
+       for (i=0;i<2;i++) printf("%d %f, ", rank, data[i]);
+       printf("\n");
+      }
+
       if(hdf5out) {
         if(rank == 0) {
   	printf("      Writing hdf5...\n");   fflush(stdout);
         }
 
         if (iots > 0) {
+         int i;
+         for (i = 0; i < inp; i++) {
+           if (rank == inp*jnp*knp+i) {
+            MPI_Gather(data, cni*cnj*cnk, MPI_FLOAT, rowdata, cni*cnj*cnk, MPI_FLOAT, MPI_ROOT, inter_comm_rows[i]);
+           }
+	 } 
+         if (crnk[0] != -1)
+          MPI_Gather(data, cni*cnj*cnk, MPI_FLOAT, rowdata, cni*cnj*cnk, MPI_FLOAT, crnk[0], inter_comm_rows[crnk[0]]);
+
+         for (i = 0; i < inp; i++) {
+           if (rank == inp*jnp*knp+i) {
+            MPI_Gather(height, cni*cnj*cnk, MPI_FLOAT, rowheight, cni*cnj*cnk, MPI_FLOAT, MPI_ROOT, inter_comm_rows[i]);
+           }
+         }
+         if (crnk[0] != -1)
+          MPI_Gather(height, cni*cnj*cnk, MPI_FLOAT, rowheight, cni*cnj*cnk, MPI_FLOAT, crnk[0], inter_comm_rows[crnk[0]]);
+
+         for (i = 0; i < inp; i++) {
+           if (rank == inp*jnp*knp+i) {
+            MPI_Gather(ola_mask, cni*cnj*cnk+3, MPI_INT, rowola_mask, cni*cnj*cnk+3, MPI_INT, MPI_ROOT, inter_comm_rows[i]);
+           }
+         }
+         if (crnk[0] != -1)
+          MPI_Gather(ola_mask, cni*cnj*cnk+3, MPI_INT, rowola_mask, cni*cnj*cnk+3, MPI_INT, crnk[0], inter_comm_rows[crnk[0]]);
+
+         for (i = 0; i < inp; i++) {
+           if (rank == inp*jnp*knp+i) {
+            MPI_Gather(ol_mask, cni*cnj*cnk, MPI_INT, rowol_mask, cni*cnj*cnk, MPI_INT, MPI_ROOT, inter_comm_rows[i]);
+           }
+         }
+         if (crnk[0] != -1)
+          MPI_Gather(ol_mask, cni*cnj*cnk, MPI_INT, rowol_mask, cni*cnj*cnk, MPI_INT, crnk[0], inter_comm_rows[crnk[0]]);
+
+
+
+/*
          // Gather data
          if (rank == inp*jnp*knp) {
            MPI_Gather(data, cni*cnj*cnk , MPI_FLOAT, alldata, cni*cnj*cnk, MPI_FLOAT, MPI_ROOT, inter_comm);
@@ -466,11 +538,15 @@ int main(int argc, char **argv)
            MPI_Gather(ol_mask, cni*cnj*cnk, MPI_INT, allol_mask, cni*cnj*cnk, MPI_INT, MPI_PROC_NULL, inter_comm);
          else
           MPI_Gather(ol_mask, cni*cnj*cnk, MPI_INT, allol_mask, cni*cnj*cnk, MPI_INT, 0, inter_comm);
-
+*/
         }
-
         if (rank >= inp*jnp*knp) {
-            writehdf5_quilt_new(num_varnames, varnames, new_comm, tt, ni, nj, nk, cni, cnj, cnk, alldata, allheight, allola_mask, allol_mask, hdf5_chunk, hdf5_compress,rank);
+            for (i = 0; i < cni*nj*nk; i++)
+                printf("%d %f, ", rank, rowdata[i]);
+            printf("\n");
+ 
+            //writehdf5_quilt_new(num_varnames, varnames, new_comm, tt, ni, nj, nk, cni, cnj, cnk, alldata, allheight, allola_mask, allol_mask, hdf5_chunk, hdf5_compress,rank);
+            writehdf5_quilt_new(num_varnames, varnames, new_comm, tt, ni, nj, nk, cni, cnj, cnk, rowdata, rowheight, rowola_mask, rowol_mask, hdf5_chunk, hdf5_compress,rank);
 	}   // end of "if (rank < inp*jnp*knp)"
 
       }
@@ -482,8 +558,7 @@ int main(int argc, char **argv)
       timer_collectprintstats(outtime, comm, 0, "   Output");
       timer_collectprintstats(heighttime, comm, 0, "   Height");
     }
-  
-    }
+   } 
   
       /* finalize ADIOS */
   #ifdef HAS_ADIOS
@@ -505,13 +580,13 @@ int main(int argc, char **argv)
     free(ola_mask);
     free(ol_mask);
    } else {
-     free(alldata);
-     free(allheight);
-     free(allola_mask);
-     free(allol_mask); 
+     free(rowdata);
+     free(rowheight);
+     free(rowola_mask);
+     free(rowol_mask); 
    }
   MPI_Barrier(MPI_COMM_WORLD);
-  MPI_Comm_free(&inter_comm);
+//  MPI_Comm_free(&inter_comm);
   MPI_Finalize();
 
   return 0;

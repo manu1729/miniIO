@@ -284,14 +284,15 @@ void writehdf5_quilt_new(const int num_varnames, char varnames[][20], MPI_Comm c
     dimsf[2] = ni;
     dimsm[0] = nk;
     dimsm[1] = nj;
-    dimsm[2] = ni;
+    dimsm[2] = cni;
 
 #ifdef TIMEIO
     double createfile, prewrite, write, postwrite;   /* Timers */
     timer_tick(&createfile, comm, 0);
 #endif
-
-  if (true) {
+  int r;
+  MPI_Comm_rank(comm, &r);
+  if (!r) {
       if( (file_id = H5Fcreate(fname, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT)) < 0) {
 	fprintf(stderr, "writehdf5 error: could not create %s \n", fname);
 	MPI_Abort(comm, 1);
@@ -343,7 +344,7 @@ void writehdf5_quilt_new(const int num_varnames, char varnames[][20], MPI_Comm c
       H5Fclose(file_id);
 
   }
-
+  MPI_Barrier(comm);
 #ifdef TIMEIO
     timer_tock(&createfile);
     timer_collectprintstats(createfile, comm, 0, "CreateFile");
@@ -351,8 +352,8 @@ void writehdf5_quilt_new(const int num_varnames, char varnames[][20], MPI_Comm c
 #endif
 
     /* Set up MPI info */
-//    MPI_Info_create(&info);
-//    MPI_Info_set(info, "striping_factor", "1");
+    MPI_Info_create(&info);
+    MPI_Info_set(info, "striping_factor", "1");
 
     /* Set up file access property list with parallel I/O access */
     if( (plist_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
@@ -395,8 +396,8 @@ void writehdf5_quilt_new(const int num_varnames, char varnames[][20], MPI_Comm c
 #endif
     int i;
     int *t = ola_mask;
-    float *xfordataf = (float *) malloc(ni*nj*nk*sizeof(float));
-    int *xfordatai = (int *) malloc(ni*nj*nk*sizeof(int));
+    float *xfordataf = (float *) malloc(cni*nj*nk*sizeof(float));
+    int *xfordatai = (int *) malloc(cni*nj*nk*sizeof(int));
     for (j=0; j< num_varnames; j++) {
 
 #ifdef TIMEIO
@@ -404,23 +405,22 @@ void writehdf5_quilt_new(const int num_varnames, char varnames[][20], MPI_Comm c
 #endif
       did = H5Dopen(file_id, varnames[j],H5P_DEFAULT);
       filespace = H5Dget_space(did);
-      printf("---------------%s\n", varnames[j]);
+      printf("%d ---------------%s\n", r, varnames[j]);
       if(strcmp(varnames[j],"data") == 0)
-        xform_dataf(rank,xfordataf,data,ni,nj,nk,cni,cnj,cnk,ola_mask);
+        xform_dataf(r,xfordataf,data,ni,nj,nk,cni,cnj,cnk,ola_mask);
       else if(strcmp(varnames[j],"height") == 0) 
-        xform_dataf(rank,xfordataf,height,ni,nj,nk,cni,cnj,cnk,ola_mask);
+        xform_dataf(r,xfordataf,height,ni,nj,nk,cni,cnj,cnk,ola_mask);
       else if(strcmp(varnames[j],"ol_mask") == 0) 
-        xform_datai(rank,xfordatai,ol_mask,ni,nj,nk,cni,cnj,cnk,ola_mask,0);
+        xform_datai(r,xfordatai,ol_mask,ni,nj,nk,cni,cnj,cnk,ola_mask,0);
       else if(strcmp(varnames[j],"ola_mask") == 0) 
-        xform_datai(rank,xfordatai,ola_mask,ni,nj,nk,cni,cnj,cnk,ola_mask,1); 
-        
+        xform_datai(r,xfordatai,ola_mask,ni,nj,nk,cni,cnj,cnk,ola_mask,1); 
 
       start[0] = 0;
       start[1] = 0;
-      start[2] = 0;
+      start[2] = cni*r;
       count[0] = nk;
       count[1] = nj;
-      count[2] = ni;
+      count[2] = cni;
     
   
       /* Select hyperslab in the file.*/
@@ -476,17 +476,13 @@ void writehdf5_quilt_new(const int num_varnames, char varnames[][20], MPI_Comm c
 void xform_dataf(int rank, float *xformdata, float *data, int ni, int nj,int nk, int cni,int cnj,int cnk, int *offs) {
   int l,i,j,k,is,js,ks;
   int offset, *t, c=0;
-  for (l = 0; l < rank /*temporary fix, should be #compute-tasks*/; l++) {
-    t = (offs) + l*(cni*cnj*cnk+3);
-    is = t[cni*cnj*cnk] * cni;
-    js = t[cni*cnj*cnk + 1] * cnj;
-    ks = t[cni*cnj*cnk + 2] * cnk;
-    offset = ni*nj*ks + nj*js + is;
+  for (l = 0; l < nj*nk/(cnj*cnk)  /*temporary fix, should be #compute-tasks*/; l++) {
+    offset = l*cni*cnj;
     for (k=0;k<cnk;k++)
      for (j=0;j<cnj;j++)
       for (i=0;i<cni;i++) {
-        xformdata[offset + ni*nj*k + nj*j + i] = data[c++];
-        //printf("%d %f \n", offset+ni*nj*k + nj*j + i, data[c-1]);
+        xformdata[offset + cni*nj*k + cni*j + i] = data[c++];
+//        printf("%d %f \n",offset + cni*nj*k + cni*j + i, data[c-1]);
       }
   }
 }
@@ -494,16 +490,12 @@ void xform_dataf(int rank, float *xformdata, float *data, int ni, int nj,int nk,
 void xform_datai(int rank, int *xformdata, int *data, int ni, int nj,int nk, int cni,int cnj,int cnk, int *offs, int flag) {
   int l,i,j,k,is,js,ks;
   int offset, *t, c=0;
-  for (l = 0; l < rank /*temporary fix, should be #compute-tasks*/; l++) {
-    t = (offs) + l*(cni*cnj*cnk+3);
-    is = t[cni*cnj*cnk] * cni;
-    js = t[cni*cnj*cnk + 1] * cnj;
-    ks = t[cni*cnj*cnk + 2] * cnk;
-    offset = ni*nj*ks + nj*js + is;
+  for (l = 0; l < nj*nk/(cnj*cnk) /*temporary fix, should be #compute-tasks*/; l++) {
+    offset = l*cni*cnj;
     for (k=0;k<cnk;k++)
      for (j=0;j<cnj;j++)
       for (i=0;i<cni;i++)
-        xformdata[offset + ni*nj*k + nj*j + i] = data[c++];
+        xformdata[offset + cni*nj*k + cni*j + i] = data[c++];
     if (flag) c += 3;
   }
 }
