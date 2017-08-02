@@ -405,7 +405,6 @@ void writehdf5_quilt_new(const int num_varnames, char varnames[][20], MPI_Comm c
 #endif
       did = H5Dopen(file_id, varnames[j],H5P_DEFAULT);
       filespace = H5Dget_space(did);
-      printf("%d ---------------%s\n", r, varnames[j]);
       if(strcmp(varnames[j],"data") == 0)
         xform_dataf(r,xfordataf,data,ni,nj,nk,cni,cnj,cnk,ola_mask);
       else if(strcmp(varnames[j],"height") == 0) 
@@ -482,7 +481,6 @@ void xform_dataf(int rank, float *xformdata, float *data, int ni, int nj,int nk,
      for (j=0;j<cnj;j++)
       for (i=0;i<cni;i++) {
         xformdata[offset + cni*nj*k + cni*j + i] = data[c++];
-//        printf("%d %f \n",offset + cni*nj*k + cni*j + i, data[c-1]);
       }
   }
 }
