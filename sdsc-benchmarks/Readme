@@ -1,0 +1,23 @@
+This is a set of simple benchmarks to test Lustre performance for the following cases:
+- small I/O operations with many output files (pio-many-files-per-rank.c)
+- small I/O operations with one file per rank, but many writes per file (pio-one-file-per-rank.c)
+- aggregate I/O with one file per rank (pio-one-file-per-rank-single-write.c)
+
+
+The following options are provided for each case:
+-s <number>: size of each array/variable in KB (is in MB for mpi-io.c)
+-b <number>: number of repetitions. This can be used to increase the size of the file being written (doesn't work for the aggreate I/O case).
+-p <file path>: path of the output files. Note that this option does not work for pio-many-files-per-rank.c yet.
+
+Note: Change the FILE_PATH in *.h files to point to the lustre file system if required
+
+To test Lustre I/O performance, try combinations of the following, but be cautious if you are using a production system with 
+shared I/O nodes.
+- change lustre system parameters such as stripe size and stripe count
+- vary the number of processes (MPI ranks)
+- vary output file sizes
+
+Compile: source build.sh
+
+Example run: mpirun -n 4 ./piov2 -s 10 -b 10 
+
