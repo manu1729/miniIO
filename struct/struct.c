@@ -62,6 +62,7 @@ int main(int argc, char **argv)
   int mask_thres_index;
   struct osn_context *simpnoise;    /* Open simplex noise context */
   double heighttime, computetime, outtime;   /* Timers */
+  double apptime;   /* Timers */
   
   const int num_varnames=4;
   char *varnames[num_varnames];
@@ -253,8 +254,9 @@ int main(int argc, char **argv)
   /* generate masked grid */
   /* Spatial loops */
   size_t ii;     /* data index */
-
+  double s = MPI_Wtime();
   timer_tick(&heighttime, comm, 1);
+  timer_tick(&apptime, comm, 1);
   z = zs;
   for(k = 0, ii = 0; k < cnk; k++) {
     y = ys;
@@ -387,6 +389,7 @@ int main(int argc, char **argv)
       if(rank == 0) {
 	printf("      Writing hdf5...\n");   fflush(stdout);
       }
+
       writehdf5(num_varnames, varnames, comm, rank, nprocs, tt,
 		is, js, ks,
 		ni, nj, nk, cni, cnj, cnk,  
@@ -401,6 +404,13 @@ int main(int argc, char **argv)
     timer_collectprintstats(heighttime, comm, 0, "   Height");
 
   }
+
+   MPI_Barrier(MPI_COMM_WORLD);
+   double e = MPI_Wtime();
+   if (!rank)
+    printf("Application time == %lf\n", e-s);
+   timer_tock(&apptime);   
+   timer_collectprintstats(apptime, MPI_COMM_WORLD, 0, "   Application"); 
 
     /* finalize ADIOS */
 #ifdef HAS_ADIOS

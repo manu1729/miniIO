@@ -67,6 +67,7 @@ int main(int argc, char **argv)
   int mask_thres_index;
   struct osn_context *simpnoise;    /* Open simplex noise context */
   double heighttime, computetime, outtime;   /* Timers */
+  double apptime;   /* Timers */
   
   const int num_varnames=4;
   char varnames[4][20] = {"data", "height", "ola_mask", "ol_mask"};
@@ -297,6 +298,11 @@ int main(int argc, char **argv)
     /* generate masked grid */
     /* Spatial loops */
     size_t ii;     /* data index */
+
+  timer_tick(&apptime, MPI_COMM_WORLD, 1);
+
+  double s = MPI_Wtime();
+
   if (rank < inp*jnp*knp) {
     timer_tick(&heighttime, comm, 1);
     z = zs;
@@ -423,8 +429,13 @@ int main(int argc, char **argv)
       timer_tock(&computetime);
   
   
-      timer_tick(&outtime, comm, 1);
+      //timer_tick(&outtime, comm, 1);
      } // end of "if (rank < inp*jnp*knp)"
+
+    if (iots == 0)
+      timer_tick(&outtime, comm, 1);
+    else
+      timer_tick(&outtime, new_comm, 1);
       
   #ifdef HAS_ADIOS
       if (adios_method) adiosstruct_write(&adiosstruct_nfo, tt);
@@ -478,13 +489,26 @@ int main(int argc, char **argv)
       }
   #endif
   
+    timer_tock(&outtime);
+    if (rank >= inp*jnp*knp) {
+     timer_collectprintstats(outtime, new_comm, 0, "   Output");
+    }
     if (rank < inp*jnp*knp) {  
-      timer_tock(&outtime);
+    //  timer_tock(&outtime);
       timer_collectprintstats(computetime, comm, 0, "   Compute");
       timer_collectprintstats(outtime, comm, 0, "   Output");
       timer_collectprintstats(heighttime, comm, 0, "   Height");
     }
-   } 
+   }
+
+   timer_tock(&apptime);
+   timer_collectprintstats(apptime, MPI_COMM_WORLD, 0, "   Application"); 
+
+  MPI_Barrier(MPI_COMM_WORLD);
+  double e = MPI_Wtime();
+
+  if (!rank)
+   printf("Application time == %lf\n", e-s);
   
       /* finalize ADIOS */
   #ifdef HAS_ADIOS
