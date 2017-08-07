@@ -1,0 +1,20 @@
+We have modified the struct miniIO benchmark to incorporate I/O quilting. We have implemented the following cases:
+- one I/O task for the entire miniIO app. In this case, data from each compute process is gathered by the IO task and written one chuck at a time.
+- one I/O task for the entire miniIO app similar to the above case, but entire data written back at once.
+- one I/O task per row of processes. Note that the processes are laid out as a 2D grid of size MxN. The number of I/O task is M, one per row. 
+
+
+To get these versions from the git, use the following commits:
+
+1) One I/O task, multiple writes: 14524c83425bf47fd20d52aefdde1ba62b8c7ed4
+2) One I/O task, single write: 97b8efc211a634629e89eb1ab1c27b66ce1b7c8e
+3) Multiple I/O tasks: 97eeb49e7618d056ecdd6b3b57d4fcbb819041c0
+
+Compile:  make -f Makefile_quilt
+
+Example run: mpirun --np 20 ./struct_quilt --tasks 4 4 --size 400 400 400 --tsteps 1 --hdf5 --iotasks 4
+             Ensure that the number of compute tasks (4*4) plus io-tasks (4) is equal to total MPI tasks (20)  
+
+
+Dependency: HDF5, need to either load the module or install it. 
+
