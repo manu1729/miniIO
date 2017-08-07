@@ -1,0 +1,17 @@
+Using Lustre File System:
+--------------------------
+- Stripe count and stripe size: set appropriate values of these parameters. 
+  For example, a large file might require higher stripe count whereas a smaller file
+  may use the default striping (1 or 2).
+- Use the benchmarks provided or other benchmarks like IOR to guide the selection of appropriate Lustre
+  file tuning parameters (stripe count, stripe size, alignment...)
+- Try to avoid using the following commands: ls -l, ls *.out (wildcards)... these commands tend
+  to cause excessive network traffic.
+- Store only a small number of files per directory. If there is large number of files, try to store
+  them in a heirarchical fashion.
+- When developing application I/O, try to minimize:
+  - frequent file opens/closes.
+  - having small I/O operations (reading / writing small chunks multiple times). Instead use
+    aggregation and them perform large I/O operation.
+- Use tools such as Darshan / TAU to analyze the I/O behavior of your application and then optimize I/O.
+  Typical I/O issues mentioned above can be detected using these tools.
